@@ -33,7 +33,7 @@ public class TestController {
             @Override
             public void run() {
                 while (true) {
-                    boolean result = businessService.testLock(lockMediaType);
+                    boolean result = businessService.doBusiness(lockMediaType);
                     if (result) {
                         log.info("****************thread-1 测试成功");
                         break;
@@ -46,7 +46,7 @@ public class TestController {
             @Override
             public void run() {
                 while (true) {
-                    boolean result = businessService.testLock(lockMediaType);
+                    boolean result = businessService.doBusiness(lockMediaType);
                     if (result) {
                         log.info("****************thread-2 测试成功");
                         break;

@@ -2,6 +2,7 @@ package com.song.distributedlock.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import redis.clients.jedis.JedisPool;
 
 import javax.annotation.Resource;
 import java.util.UUID;
@@ -22,6 +23,8 @@ public class BusinessService {
     private SqlDistributedLockServiceImpl sqlDistributedLockService;
     @Resource
     private RedisDistributedLockServiceImpl redisDistributedLockService;
+    @Resource
+    private JedisPool jedisPool;
 
     public boolean doBusiness(Integer lockMediaType) {
         DistributedLockService distributedLockService = this.getLockMedia(lockMediaType);
@@ -31,11 +34,19 @@ public class BusinessService {
         }
 
         // 获取锁
-        String ownerId = UUID.randomUUID().toString().replaceAll("-", "");
+        String ownerId = this.getOwnerId();
         boolean getLockResult = distributedLockService.getLock(lockName, ownerId);
         if (getLockResult == false) {
             log.error("[doBusiness]获取锁失败!");
             return false;
+        }
+
+        // redis锁,开启守护线程
+        RedisLockDaemonRunnable daemonRunnable = null;
+        Thread daemonThread = null;
+        if (lockMediaType == lock_media_redis) {
+            daemonRunnable = this.getDaemonRunnable(jedisPool, ownerId, lockName, 2000);
+            daemonThread = this.openDaemonThread(daemonRunnable);
         }
 
         try {
@@ -53,6 +64,11 @@ public class BusinessService {
             } else {
                 log.info("[doBusiness]释放锁成功!");
             }
+
+            // 关闭守护线程
+            if (lockMediaType == lock_media_redis) {
+                this.closeLockDaemonThread(daemonRunnable, daemonThread);
+            }
         }
     }
 
@@ -69,41 +85,24 @@ public class BusinessService {
         return null;
     }
 
-
-
-
-    public boolean testLock(Integer lockMediaType) {
-        DistributedLockService distributedLockService = this.getLockMedia(lockMediaType);
-        if (distributedLockService == null) {
-            log.error("{}获取锁的操作类失败!", Thread.currentThread().getName());
-            return false;
-        }
-
-        // 获取锁
-        String ownerId = UUID.randomUUID().toString().replaceAll("-", "");
-        boolean getLockResult = distributedLockService.getLock(lockName, ownerId);
-        if (getLockResult == false) {
-            log.error("{}获取锁失败!", Thread.currentThread().getName());
-            return false;
-        }
-        log.info("{}获取锁成功!", Thread.currentThread().getName());
-
-        try {
-            // 执行业务
-//            Thread.currentThread().sleep(1000);
-        } catch (Exception e) {
-            log.error("[doBusiness]do something error");
-        } finally {
-            // 释放锁
-//            boolean delLockResult = distributedLockService.delLock(lockName, ownerId);
-//            if (delLockResult == false) {
-//                log.error("{}释放锁失败!", Thread.currentThread().getName());
-//            } else {
-//                log.info("{}释放锁成功!", Thread.currentThread().getName());
-//            }
-            return true;
-        }
+    private String getOwnerId() {
+        return UUID.randomUUID().toString().replaceAll("-", "");
     }
 
+    public RedisLockDaemonRunnable getDaemonRunnable(JedisPool jedisPool, String ownerId, String lockName, long lockExpireMills) {
+        RedisLockDaemonRunnable runnable = new RedisLockDaemonRunnable(jedisPool, ownerId, lockName, lockExpireMills);
+        return runnable;
+    }
 
+    public Thread openDaemonThread(RedisLockDaemonRunnable runnable) {
+        Thread daemonThread = new Thread(runnable);
+        daemonThread.setDaemon(true);
+        daemonThread.start();
+        return daemonThread;
+    }
+
+    public void closeLockDaemonThread(RedisLockDaemonRunnable runnable, Thread daemon) {
+        runnable.stop();
+        daemon.interrupt();
+    }
 }
