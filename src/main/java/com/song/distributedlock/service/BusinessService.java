@@ -24,6 +24,8 @@ public class BusinessService {
     @Resource
     private RedisDistributedLockServiceImpl redisDistributedLockService;
     @Resource
+    private ZookeeperDistributedLockServiceImpl zookeeperDistributedLockService;
+    @Resource
     private JedisPool jedisPool;
 
     public boolean doBusiness(Integer lockMediaType) {
@@ -80,6 +82,8 @@ public class BusinessService {
             return sqlDistributedLockService;
         } else if (lockMediaType == lock_media_redis) {
             return redisDistributedLockService;
+        } else if (lockMediaType == lock_media_zookeeper) {
+            return zookeeperDistributedLockService;
         }
 
         return null;
